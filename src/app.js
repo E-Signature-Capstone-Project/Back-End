@@ -3,6 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const supabase = require("./services/supabaseService");
 
 const { sequelize } = require("./models");
 
@@ -28,6 +29,11 @@ sequelize.authenticate()
   .catch((err) => {
     console.error("❌ Database error:", err.message);
   });
+
+(async () => {
+  const { data, error } = await supabase.storage.listBuckets();
+  console.log("Buckets:", data, error);
+})();
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
