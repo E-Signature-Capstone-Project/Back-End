@@ -1,14 +1,24 @@
 const express = require("express");
-const { getDocuments, uploadDocument, getDocumentById } = require("../controllers/documentController");
-const authMiddleware = require("../middleware/authMiddleware");
-const upload = require("../middleware/uploadMiddleware");
-
 const router = express.Router();
 
+const { getDocuments, uploadDocument, getDocumentById } = require("../controllers/documentController");
+const authMiddleware = require("../middleware/authMiddleware");
+
+// ✅ ambil instance uploadPDF dari middleware (bukan seluruh object)
+const { uploadPDF } = require("../middleware/uploadMiddleware");
+
+// 🔹 Dapatkan semua dokumen user
 router.get("/", authMiddleware, getDocuments);
 
+// 🔹 Dapatkan dokumen berdasarkan ID
 router.get("/:id", authMiddleware, getDocumentById);
 
-router.post("/upload", authMiddleware, upload.single("file"), uploadDocument);
+// 🔹 Upload dokumen PDF
+router.post(
+  "/upload",
+  authMiddleware,
+  uploadPDF.single("file"), // ✅ gunakan uploadPDF bukan upload
+  uploadDocument
+);
 
 module.exports = router;
