@@ -1,22 +1,13 @@
 const express = require("express");
 const router = express.Router();
-const signatureBaselineController = require("../controllers/signatureBaselineController");
+const { uploadImage } = require("../middleware/uploadMiddleware");
 const authMiddleware = require("../middleware/authMiddleware");
-const multer = require("multer");
+const { addBaseline, getBaselines } = require("../controllers/signatureBaselineController");
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Tambah tanda tangan baseline
+router.post("/add", authMiddleware, uploadImage.single("image"), addBaseline);
 
-router.post(
-  "/upload",
-  authMiddleware,
-  upload.single("file"),
-  signatureBaselineController.uploadBaseline
-);
-
-router.get(
-  "/",
-  authMiddleware,
-  signatureBaselineController.getBaselines
-);
+// Lihat semua baseline user
+router.get("/", authMiddleware, getBaselines);
 
 module.exports = router;

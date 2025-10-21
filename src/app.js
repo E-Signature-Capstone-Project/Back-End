@@ -15,9 +15,6 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(cookieParser());
 
-// ===== Middleware untuk akses file statis (uploads) =====
-// Supaya file yang di-upload bisa diakses via URL seperti:
-// http://localhost:4000/uploads/signatures/user_1/nama_file.png
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ===== Routing utama =====
