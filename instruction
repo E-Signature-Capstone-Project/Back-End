@@ -1,0 +1,59 @@
+
+# Instruksi Copilot untuk Backend E-Signature
+
+## Gambaran Proyek
+Ini adalah backend Node.js untuk platform tanda tangan elektronik, menggunakan Express, Sequelize (MySQL), dan Supabase untuk penyimpanan. Struktur kode dipisah berdasarkan fitur dan tanggung jawab: controller, model, route, middleware, dan service.
+
+## Arsitektur & Alur Data Utama
+- **Entry Point:** `src/app.js` menginisialisasi Express, middleware, dan routing. Koneksi ke MySQL via Sequelize dan setup Supabase.
+- **Routing:** Semua endpoint API ada di `src/routes/`, dikelompokkan per resource (auth, documents, requests, logs, baseline). Router utama: `src/routes/index.js`.
+- **Controller:** Logika bisnis tiap resource di `src/controllers/`. Controller menerima input terverifikasi dan menangani interaksi DB/service.
+- **Model:** Model Sequelize di `src/models/` mendefinisikan skema DB & relasi. Lihat `src/models/index.js` untuk asosiasi (misal: User-Document, User-SignatureRequest).
+- **Middleware:**
+  - `authMiddleware.js` mewajibkan autentikasi JWT untuk route yang dilindungi.
+  - `uploadMiddleware.js` (Multer) membatasi upload hanya PDF dan menyimpan di `/uploads`.
+- **Integrasi Supabase:** `src/services/supabaseService.js` menginisialisasi client Supabase dari environment variable.
+
+## Alur Kerja Developer
+- **Jalankan Mode Dev:**
+  ```
+  npm run dev
+  ```
+  (Nodemon, auto-reload saat ada perubahan)
+- **Jalankan Produksi:**
+  ```
+  npm start
+  ```
+- **Environment:**
+  - Wajib ada file `.env` dengan kredensial DB & Supabase (lihat `config/db.js` dan `src/services/supabaseService.js`).
+- **Testing:**
+  - Tidak ada framework test default (`npm test` hanya placeholder).
+
+## Pola & Konvensi Khusus Proyek
+- **Autentikasi:** JWT, token wajib di header `Authorization: Bearer <token>` untuk hampir semua endpoint.
+- **Upload File:** Hanya PDF, disimpan di `/uploads` dengan nama file timestamp.
+- **Error Handling:** Controller mengembalikan error JSON dengan HTTP status yang sesuai.
+- **Relasi Model:** Semua asosiasi diatur di `src/models/index.js` dan harus diupdate jika model berubah.
+- **Struktur Route:**
+  - `/auth` untuk registrasi, login, dan profil
+  - `/documents` untuk CRUD & upload dokumen
+  - `/requests`, `/logs`, `/baseline` untuk alur tanda tangan & verifikasi
+
+## Dependensi Eksternal
+- **Supabase:** Untuk storage (lihat `src/services/supabaseService.js`).
+- **Sequelize:** ORM MySQL, konfigurasi di `config/db.js`.
+- **Multer:** Upload file, konfigurasi di `src/middleware/uploadMiddleware.js`.
+
+## Contoh Penggunaan
+- **Registrasi user:** `POST /auth/register`
+- **Login:** `POST /auth/login`
+- **Upload dokumen:** `POST /documents/upload` (hanya PDF, butuh auth)
+
+## Saat Menambah Fitur
+- Tempatkan logika bisnis baru di controller terkait.
+- Update/tambah model Sequelize & asosiasi di `src/models/` dan `src/models/index.js`.
+- Tambah route baru di `src/routes/` dan daftarkan di `src/routes/index.js`.
+- Gunakan environment variable untuk secret/kredensial.
+
+---
+_Jika ada bagian yang kurang jelas atau belum lengkap, silakan minta klarifikasi atau feedback untuk perbaikan._

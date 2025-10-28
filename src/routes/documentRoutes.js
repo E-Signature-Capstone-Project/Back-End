@@ -1,24 +1,23 @@
 const express = require("express");
 const router = express.Router();
-
-const { getDocuments, uploadDocument, getDocumentById } = require("../controllers/documentController");
 const authMiddleware = require("../middleware/authMiddleware");
-
-// ✅ ambil instance uploadPDF dari middleware (bukan seluruh object)
+const uploadDocumentImage = require("../middleware/uploadDocumentImage");
+const { applySignature, getDocuments, getDocumentById, uploadDocument } = require("../controllers/documentController");
 const { uploadPDF } = require("../middleware/uploadMiddleware");
 
-// 🔹 Dapatkan semua dokumen user
+// Daftar dokumen
 router.get("/", authMiddleware, getDocuments);
-
-// 🔹 Dapatkan dokumen berdasarkan ID
 router.get("/:id", authMiddleware, getDocumentById);
 
-// 🔹 Upload dokumen PDF
+// Upload dokumen PDF
+router.post("/upload", authMiddleware, uploadPDF.single("file"), uploadDocument);
+
+// Apply tanda tangan
 router.post(
-  "/upload",
+  "/:id/sign",
   authMiddleware,
-  uploadPDF.single("file"), // ✅ gunakan uploadPDF bukan upload
-  uploadDocument
+  uploadDocumentImage.single("signatureImage"), // field name Postman harus sama
+  applySignature
 );
 
 module.exports = router;
