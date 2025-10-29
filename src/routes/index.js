@@ -11,5 +11,6 @@ router.use("/auth", authRoutes);
 router.use("/documents", documentRoutes);
 router.use("/requests", signatureRequestRoutes);
 router.use("/logs", logRoutes);
-router.use("/baseline", signatureBaselineRoutes);
+router.use("/signature_baseline", signatureBaselineRoutes);
+
 module.exports = router;

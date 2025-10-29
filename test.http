@@ -1,2 +1,0 @@
-GET http://localhost:4000/documents
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6InJhZmlAZXhhbXBsZS5jb20iLCJpYXQiOjE3NTkzODMzODcsImV4cCI6MTc1OTM4Njk4N30.zKGHxegWx6XUUdqjiM8evFNrFoaUYJ2eOWV2TAJ02ik
