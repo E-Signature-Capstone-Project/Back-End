@@ -18,6 +18,7 @@ exports.register = async (req, res) => {
 
     res.status(201).json({ message: "Registrasi berhasil", user_id: user.user_id });
   } catch (err) {
+    console.log("❌ Register error:", err);
     res.status(400).json({ error: err.message });
   }
 };
