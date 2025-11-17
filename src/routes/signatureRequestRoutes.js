@@ -14,16 +14,16 @@ const router = express.Router();
 // Buat request tanda tangan
 router.post("/", authMiddleware, createRequest);
 
-// Ambil semua request masuk
+// Ambil semua request masuk (user sebagai signer yang dimintai)
 router.get("/incoming", authMiddleware, getIncomingRequests);
 
-// Ambil semua request keluar
+// Ambil semua request keluar (user sebagai peminta)
 router.get("/outgoing", authMiddleware, getOutgoingRequests);
 
-// Approve request
+// Setujui permintaan tanda tangan
 router.post("/:id/approve", authMiddleware, approveRequest);
 
-// Reject request
+// Tolak permintaan tanda tangan
 router.post("/:id/reject", authMiddleware, rejectRequest);
 
 module.exports = router;

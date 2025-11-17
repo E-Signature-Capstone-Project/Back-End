@@ -24,7 +24,7 @@ app.use("/", routes);
 sequelize.authenticate()
   .then(() => {
     console.log("✅ Database connected");
-    return sequelize.sync({ alter: true }); // update struktur tabel sesuai model
+    return sequelize.sync({ force: false }); // update struktur tabel sesuai model
   })
   .then(() => {
     console.log("✅ Database synced with models");

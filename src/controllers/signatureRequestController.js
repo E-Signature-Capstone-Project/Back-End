@@ -1,18 +1,22 @@
 const SignatureRequest = require("../models/SignatureRequest");
 const Document = require("../models/Document");
+const User = require("../models/User");
 
-// buat request tanda tangan
+// Create signature request
 exports.createRequest = async (req, res) => {
   try {
     const { document_id, signer_id, note } = req.body;
 
-    // cek apakah dokumen milik requester
+    // Cek apakah dokumen milik requester
     const doc = await Document.findOne({
       where: { document_id, user_id: req.user.user_id }
     });
 
     if (!doc) {
-      return res.status(404).json({ error: "Dokumen tidak ditemukan atau bukan milik anda" });
+      return res.status(404).json({
+        success: false,
+        message: "Dokumen tidak ditemukan atau bukan milik Anda"
+      });
     }
 
     const request = await SignatureRequest.create({
@@ -22,33 +26,53 @@ exports.createRequest = async (req, res) => {
       note
     });
 
-    res.status(201).json({ message: "Request tanda tangan berhasil dibuat", request });
+    res.status(201).json({
+      success: true,
+      message: "Permintaan tanda tangan berhasil dibuat",
+      data: request
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// ambil semua request masuk (untuk user login)
+// Get incoming requests (user dimintai tanda tangan)
 exports.getIncomingRequests = async (req, res) => {
   try {
-    const requests = await SignatureRequest.findAll({ where: { signer_id: req.user.user_id } });
-    res.json(requests);
+    const requests = await SignatureRequest.findAll({
+      where: { signer_id: req.user.user_id },
+      include: [
+        { model: User, as: "requester", attributes: ["user_id", "name", "email"] },
+        { model: Document, attributes: ["document_id", "title", "file_path"] }
+      ],
+      order: [["created_at", "DESC"]]
+    });
+
+    res.json({ success: true, data: requests });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// ambil semua request keluar (dibuat user login)
+// Get outgoing requests (user yang meminta tanda tangan)
 exports.getOutgoingRequests = async (req, res) => {
   try {
-    const requests = await SignatureRequest.findAll({ where: { requester_id: req.user.user_id } });
-    res.json(requests);
+    const requests = await SignatureRequest.findAll({
+      where: { requester_id: req.user.user_id },
+      include: [
+        { model: User, as: "signer", attributes: ["user_id", "name", "email"] },
+        { model: Document, attributes: ["document_id", "title", "file_path"] }
+      ],
+      order: [["created_at", "DESC"]]
+    });
+
+    res.json({ success: true, data: requests });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// approve request
+// Approve request
 exports.approveRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
@@ -56,19 +80,19 @@ exports.approveRequest = async (req, res) => {
     });
 
     if (!request) {
-      return res.status(404).json({ error: "Request tidak ditemukan" });
+      return res.status(404).json({ success: false, message: "Permintaan tidak ditemukan" });
     }
 
     request.status = "approved";
     await request.save();
 
-    res.json({ message: "Request berhasil disetujui", request });
+    res.json({ success: true, message: "Permintaan disetujui", data: request });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// reject request
+// Reject request
 exports.rejectRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
@@ -76,14 +100,14 @@ exports.rejectRequest = async (req, res) => {
     });
 
     if (!request) {
-      return res.status(404).json({ error: "Request tidak ditemukan" });
+      return res.status(404).json({ success: false, message: "Permintaan tidak ditemukan" });
     }
 
     request.status = "rejected";
     await request.save();
 
-    res.json({ message: "Request berhasil ditolak", request });
+    res.json({ success: true, message: "Permintaan ditolak", data: request });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };

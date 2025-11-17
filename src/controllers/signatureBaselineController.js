@@ -3,6 +3,7 @@ const path = require("path");
 const axios = require("axios");
 const FormData = require("form-data");
 const { SignatureBaseline } = require("../models"); 
+const SignatureRequest = require("../models/SignatureRequest");
 
 // URL Flask service
 const FLASK_URL = process.env.FLASK_URL || "http://localhost:5000";
@@ -164,5 +165,49 @@ exports.getBaselines = async (req, res) => {
   } catch (error) {
     console.error("Error getBaselines:", error.message);
     return res.status(500).json({ error: "Gagal mengambil baseline." });
+  }
+};
+
+exports.getBaselinesByUserId = async (req, res) => {
+  try {
+    const requesterId = req.user.user_id; // User yang sedang login (User 1)
+    const signerId = req.params.user_id; // User pemilik baseline (User 2)
+    const documentId = req.query.document_id; // Dokumen yang dimaksud
+
+    if (!documentId) {
+      return res.status(400).json({ error: "document_id wajib disertakan" });
+    }
+
+    // Pastikan ada request tanda tangan yang approved antara kedua user
+    const request = await SignatureRequest.findOne({
+      where: {
+        requester_id: requesterId,
+        signer_id: signerId,
+        document_id: documentId,
+        status: "approved"
+      }
+    });
+
+    if (!request) {
+      return res.status(403).json({
+        error: "Anda tidak memiliki izin untuk melihat baseline user ini."
+      });
+    }
+
+    // Ambil baseline milik signer (User 2)
+    const baselines = await SignatureBaseline.findAll({
+      where: { user_id: signerId },
+      order: [["created_at", "ASC"]]
+    });
+
+    return res.json({
+      signer_id: signerId,
+      count: baselines.length,
+      baselines
+    });
+
+  } catch (error) {
+    console.error("Error getBaselinesByUserId:", error.message);
+    return res.status(500).json({ error: "Gagal mengambil baseline user lain." });
   }
 };
