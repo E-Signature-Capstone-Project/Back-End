@@ -307,3 +307,90 @@ exports.signDocument = async (req, res) => {
     return res.status(500).json({ error: "Gagal menandatangani dokumen", detail: error.message });
   }
 };
+
+exports.signDocumentExternally = async (req, res) => {
+  try {
+    const { baseline_id, pageNumber, x, y, width, height } = req.body;
+    const documentId = req.params.id;
+
+    if (!baseline_id) {
+      return res.status(400).json({ error: "baseline_id harus diisi." });
+    }
+
+    // Ambil dokumen milik user yang sedang login
+    const docRecord = await Document.findOne({
+      where: { document_id: documentId, user_id: req.user.user_id }
+    });
+
+    if (!docRecord) {
+      return res.status(404).json({ error: "Dokumen tidak ditemukan atau bukan milik Anda." });
+    }
+
+    // Ambil baseline tanda tangan signer yang disetujui
+    const baseline = await SignatureBaseline.findOne({ where: { baseline_id } });
+
+    if (!baseline || !baseline.sign_image) {
+      return res.status(404).json({ error: "Baseline tanda tangan tidak ditemukan." });
+    }
+
+    const baselineImagePath = path.resolve(baseline.sign_image);
+    if (!fs.existsSync(baselineImagePath)) {
+      return res.status(500).json({ error: "File tanda tangan baseline tidak ditemukan di server." });
+    }
+
+    // Load PDF
+    const originalFilePath = path.join(process.cwd(), docRecord.file_path);
+    if (!fs.existsSync(originalFilePath)) {
+      return res.status(500).json({ error: "File dokumen tidak ditemukan di server." });
+    }
+
+    const signedDir = path.join("uploads", "documents", "signed");
+    fs.mkdirSync(signedDir, { recursive: true });
+
+    const existingPdfBytes = await fs.promises.readFile(originalFilePath);
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+
+    const signatureBytes = await fs.promises.readFile(baselineImagePath);
+    const embeddedImage = baselineImagePath.endsWith(".png")
+      ? await pdfDoc.embedPng(signatureBytes)
+      : await pdfDoc.embedJpg(signatureBytes);
+
+    const pages = pdfDoc.getPages();
+    const pn = Number(pageNumber || 1);
+
+    if (pn < 1 || pn > pages.length) {
+      return res.status(400).json({ error: "Halaman tanda tangan di luar jangkauan." });
+    }
+
+    const targetPage = pages[pn - 1];
+
+    targetPage.drawImage(embeddedImage, {
+      x: Number(x || 0),
+      y: Number(y || 0),
+      width: Number(width || 150),
+      height: Number(height || 50),
+    });
+
+    const pdfBytes = await pdfDoc.save();
+    const signedFilename = `signed_external_${Date.now()}_${path.basename(originalFilePath)}`;
+    const signedPath = path.join(signedDir, signedFilename);
+    await fs.promises.writeFile(signedPath, pdfBytes);
+
+    const relativeSignedPath = path.relative(process.cwd(), signedPath).replace(/\\/g, "/");
+    await docRecord.update({ file_path: relativeSignedPath, status: "signed" });
+
+    return res.json({
+      message: "Tanda tangan eksternal berhasil diterapkan.",
+      document: {
+        document_id: docRecord.document_id,
+        title: docRecord.title,
+        file_url: `${req.protocol}://${req.get("host")}/${relativeSignedPath}`,
+        status: docRecord.status
+      }
+    });
+
+  } catch (err) {
+    console.error("signDocumentExternally error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
