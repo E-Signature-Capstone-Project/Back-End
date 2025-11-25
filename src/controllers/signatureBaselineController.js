@@ -27,7 +27,7 @@ async function getEmbeddingFromFlask(imagePath) {
 // ========================================================
 // 🧩 Fungsi bantu: bandingkan dua gambar via Flask
 // ========================================================
-async function compareWithFlask(imagePath1, imagePath2, threshold = 0.5) {
+async function compareWithFlask(imagePath1, imagePath2, threshold = 0.85) {
   if (!fs.existsSync(imagePath1)) throw new Error(`File 1 tidak ditemukan: ${imagePath1}`);
   if (!fs.existsSync(imagePath2)) throw new Error(`File 2 tidak ditemukan: ${imagePath2}`);
 
@@ -101,7 +101,7 @@ exports.addBaseline = async (req, res) => {
         continue;
       }
 
-      const compareResult = await compareWithFlask(filePath, baselinePath, 0.5);
+      const compareResult = await compareWithFlask(filePath, baselinePath, 0.8);
 
       console.log(`🔍 Compare with baseline ${baseline.baseline_id}: distance=${compareResult.distance}`);
 
