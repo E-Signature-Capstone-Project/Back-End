@@ -168,46 +168,96 @@ exports.getBaselines = async (req, res) => {
   }
 };
 
-exports.getBaselinesByUserId = async (req, res) => {
+// ========================================================
+// 📜 Get baseline by ID
+// ========================================================
+exports.getBaselineById = async (req, res) => {
   try {
-    const requesterId = req.user.user_id; // User yang sedang login (User 1)
-    const signerId = req.params.user_id; // User pemilik baseline (User 2)
-    const documentId = req.query.document_id; // Dokumen yang dimaksud
+    const userId = req.user.user_id;
+    const { id } = req.params; // <-- Ambil 'id' dari URL
 
-    if (!documentId) {
-      return res.status(400).json({ error: "document_id wajib disertakan" });
-    }
-
-    // Pastikan ada request tanda tangan yang approved antara kedua user
-    const request = await SignatureRequest.findOne({
+    const baseline = await SignatureBaseline.findOne({
       where: {
-        requester_id: requesterId,
-        signer_id: signerId,
-        document_id: documentId,
-        status: "approved"
-      }
+        baseline_id: id,
+        user_id: userId, // <-- Pastikan user hanya bisa melihat miliknya
+      },
     });
 
-    if (!request) {
-      return res.status(403).json({
-        error: "Anda tidak memiliki izin untuk melihat baseline user ini."
-      });
+    if (!baseline) {
+      return res.status(404).json({ error: "Baseline tidak ditemukan." });
     }
 
-    // Ambil baseline milik signer (User 2)
-    const baselines = await SignatureBaseline.findAll({
-      where: { user_id: signerId },
-      order: [["created_at", "ASC"]]
+    return res.json(baseline);
+  } catch (error) {
+    console.error("Error getBaselineById:", error.message);
+    return res.status(500).json({ error: "Gagal mengambil detail baseline." });
+  }
+};
+
+// ========================================================
+// 🔄 Update baseline by ID
+// ========================================================
+exports.updateBaselineById = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { id } = req.params; // ID baseline yang akan di-update
+
+    // 1. Cek apakah file baru diupload
+    if (!req.file) {
+      return res.status(400).json({ error: "File tanda tangan baru tidak ditemukan." });
+    }
+
+    // 2. Temukan baseline yang lama di database
+    const oldBaseline = await SignatureBaseline.findOne({
+      where: {
+        baseline_id: id,
+        user_id: userId,
+      },
+    });
+
+    if (!oldBaseline) {
+      // Jika tidak ketemu, hapus file yang baru diupload
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: "Baseline tidak ditemukan." });
+    }
+
+    // 3. (PENTING) Hapus file gambar LAMA dari server
+    const oldImagePath = path.resolve(oldBaseline.sign_image);
+    if (fs.existsSync(oldImagePath)) {
+      fs.unlinkSync(oldImagePath);
+    }
+
+    // 4. Dapatkan path dan embedding dari file BARU
+    const newFilePath = path.normalize(req.file.path).replace(/\\/g, "/");
+    const newEmbedding = await getEmbeddingFromFlask(newFilePath); // Panggil AI
+
+    // 5. Buat path penyimpanan yang konsisten
+    const newImageDbPath = path.join(
+      "uploads", "signatures", String(userId), path.basename(newFilePath)
+    ).replace(/\\/g, "/");
+
+    // 6. Update database
+    await oldBaseline.update({
+      sign_image: newImageDbPath,
+      feature_vector: newEmbedding,
     });
 
     return res.json({
-      signer_id: signerId,
-      count: baselines.length,
-      baselines
+      message: "Baseline berhasil diperbarui.",
+      baseline: oldBaseline, // Kirim data yang sudah di-update
     });
 
   } catch (error) {
-    console.error("Error getBaselinesByUserId:", error.message);
-    return res.status(500).json({ error: "Gagal mengambil baseline user lain." });
+    console.error("Error updateBaselineById:", error.message);
+    
+    // Hapus file baru jika terjadi error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    return res.status(500).json({
+      error: "Terjadi kesalahan saat memperbarui baseline.",
+      detail: error.message,
+    });
   }
 };
