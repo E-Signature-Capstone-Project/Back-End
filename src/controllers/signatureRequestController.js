@@ -1,17 +1,23 @@
+const { Op } = require("sequelize");
 const SignatureRequest = require("../models/SignatureRequest");
 const Document = require("../models/Document");
 const User = require("../models/User");
 
-// Create signature request
+// Create signature request (pakai email)
 exports.createRequest = async (req, res) => {
   try {
-    const { document_id, signer_id, note } = req.body;
+    const { document_id, recipientEmail, note } = req.body;
 
-    // Cek apakah dokumen milik requester
+    if (!document_id || !recipientEmail) {
+      return res.status(400).json({ success: false, message: "document_id dan recipientEmail wajib diisi" });
+    }
+
+    const email = String(recipientEmail).trim().toLowerCase();
+
+    // Validasi dokumen milik requester
     const doc = await Document.findOne({
       where: { document_id, user_id: req.user.user_id }
     });
-
     if (!doc) {
       return res.status(404).json({
         success: false,
@@ -19,28 +25,39 @@ exports.createRequest = async (req, res) => {
       });
     }
 
+    // Jika email penerima sudah terdaftar sbg user, tautkan signer_id
+    const existingUser = await User.findOne({ where: { email } });
+
     const request = await SignatureRequest.create({
       document_id,
       requester_id: req.user.user_id,
-      signer_id,
-      note
+      recipient_email: email,
+      signer_id: existingUser ? existingUser.user_id : null,
+      note: note || null,
+      status: "pending"
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Permintaan tanda tangan berhasil dibuat",
       data: request
     });
   } catch (err) {
+    console.error("createRequest error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// Get incoming requests (user dimintai tanda tangan)
+// Incoming requests (user dimintai) — via signer_id ATAU email yang cocok
 exports.getIncomingRequests = async (req, res) => {
   try {
     const requests = await SignatureRequest.findAll({
-      where: { signer_id: req.user.user_id },
+      where: {
+        [Op.or]: [
+          { signer_id: req.user.user_id },
+          { recipient_email: req.user.email } // jika request dibuat sebelum user terdaftar
+        ]
+      },
       include: [
         { model: User, as: "requester", attributes: ["user_id", "name", "email"] },
         { model: Document, attributes: ["document_id", "title", "file_path"] }
@@ -54,7 +71,7 @@ exports.getIncomingRequests = async (req, res) => {
   }
 };
 
-// Get outgoing requests (user yang meminta tanda tangan)
+// Outgoing requests (user peminta) — tidak berubah
 exports.getOutgoingRequests = async (req, res) => {
   try {
     const requests = await SignatureRequest.findAll({
@@ -72,11 +89,17 @@ exports.getOutgoingRequests = async (req, res) => {
   }
 };
 
-// Approve request
+// Approve
 exports.approveRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
-      where: { request_id: req.params.id, signer_id: req.user.user_id }
+      where: {
+        request_id: req.params.id,
+        [Op.or]: [
+          { signer_id: req.user.user_id },
+          { recipient_email: req.user.email }
+        ]
+      }
     });
 
     if (!request) {
@@ -84,6 +107,10 @@ exports.approveRequest = async (req, res) => {
     }
 
     request.status = "approved";
+
+    // Opsional: backfill signer_id jika sebelumnya null tapi user sekarang sudah login
+    if (!request.signer_id) request.signer_id = req.user.user_id;
+
     await request.save();
 
     res.json({ success: true, message: "Permintaan disetujui", data: request });
@@ -92,11 +119,17 @@ exports.approveRequest = async (req, res) => {
   }
 };
 
-// Reject request
+// Reject
 exports.rejectRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
-      where: { request_id: req.params.id, signer_id: req.user.user_id }
+      where: {
+        request_id: req.params.id,
+        [Op.or]: [
+          { signer_id: req.user.user_id },
+          { recipient_email: req.user.email }
+        ]
+      }
     });
 
     if (!request) {
@@ -104,6 +137,10 @@ exports.rejectRequest = async (req, res) => {
     }
 
     request.status = "rejected";
+
+    // Opsional: backfill signer_id jika perlu
+    if (!request.signer_id) request.signer_id = req.user.user_id;
+
     await request.save();
 
     res.json({ success: true, message: "Permintaan ditolak", data: request });
