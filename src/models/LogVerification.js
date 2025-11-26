@@ -6,7 +6,7 @@ const LogVerification = sequelize.define("LogVerification", {
   document_id: { type: DataTypes.INTEGER, allowNull: false },
   user_id: { type: DataTypes.INTEGER, allowNull: false },
   verification_result: { type: DataTypes.ENUM("valid", "invalid"), allowNull: false },
-  similarity_score: { type: DataTypes.FLOAT, allowNull: true },
+  similarity_score: { type: DataTypes.FLOAT },
   timestamp: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 });
 

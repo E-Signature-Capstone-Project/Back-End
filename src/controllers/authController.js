@@ -4,8 +4,8 @@ const User = require("../models/User");
 
 const SECRET_KEY = process.env.JWT_SECRET;
 
-// register
-exports.register = async (req, res) => {
+// ================== REGISTER ==================
+const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -23,8 +23,8 @@ exports.register = async (req, res) => {
   }
 };
 
-// login
-exports.login = async (req, res) => {
+// ================== LOGIN ==================
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ where: { email } });
@@ -35,7 +35,7 @@ exports.login = async (req, res) => {
     if (!isMatch) return res.status(401).json({ error: "Password salah" });
 
     const token = jwt.sign(
-      { user_id: user.user_id, email: user.email },
+      { user_id: user.user_id, email: user.email, role: user.role },
       SECRET_KEY,
       { expiresIn: "1h" }
     );
@@ -46,8 +46,8 @@ exports.login = async (req, res) => {
   }
 };
 
-// Get Profile (Auth Me)
-exports.getProfile = async (req, res) => {
+// ================== GET PROFILE ==================
+const getProfile = async (req, res) => {
   try {
     const user = await User.findByPk(req.user.user_id, {
       attributes: ["user_id", "name", "email", "role", "register_date"]
@@ -61,4 +61,45 @@ exports.getProfile = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+// ================== CREATE ADMIN ==================
+const createAdmin = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ error: "Email sudah terdaftar" });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const admin = await User.create({
+      name,
+      email,
+      password: hashed,
+      role: "admin"
+    });
+
+    res.status(201).json({
+      message: "Admin berhasil dibuat",
+      admin: {
+        user_id: admin.user_id,
+        email: admin.email,
+        role: admin.role
+      }
+    });
+  } catch (err) {
+    console.error("❌ Create admin error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ================== EXPORT ==================
+module.exports = {
+  register,
+  login,
+  getProfile,
+  createAdmin // WAJIB ADA
 };
