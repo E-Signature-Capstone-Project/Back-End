@@ -9,7 +9,7 @@ exports.getLogs = async (req, res) => {
       logs = await LogVerification.findAll({
         include: [
           { model: User, attributes: ["user_id", "name", "email"] },
-          { model: Document, attributes: ["document_id", "file_path"] }
+          { model: Document, attributes: ["document_id", "file_path","title"] }
         ],
         order: [["timestamp", "DESC"]]
       });
@@ -20,7 +20,7 @@ exports.getLogs = async (req, res) => {
         where: { user_id: req.user.user_id },
         include: [
           { model: User, attributes: ["user_id", "name", "email"] },
-          { model: Document, attributes: ["document_id", "file_path"] }
+          { model: Document, attributes: ["document_id", "file_path","title"] }
         ],
         order: [["timestamp", "DESC"]]
       });
