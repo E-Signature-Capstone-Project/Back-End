@@ -205,10 +205,28 @@ exports.getRequestSignature = async (req, res) => {
       });
     }
 
+    // ❗ Hanya boleh kalau status masih approved
     if (request.status !== "approved") {
       return res.status(403).json({
         success: false,
         message: `Tidak bisa mengambil tanda tangan. Status request: '${request.status}'`
+      });
+    }
+
+    // ✅ Cek status dokumen juga
+    const doc = await Document.findByPk(request.document_id);
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "Dokumen terkait request ini tidak ditemukan"
+      });
+    }
+
+    // ❗ Kalau dokumen sudah signed, jangan izinkan ambil tanda tangan lagi
+    if (doc.status === "signed") {
+      return res.status(403).json({
+        success: false,
+        message: "Dokumen sudah ditandatangani. Tanda tangan tidak dapat diambil lagi."
       });
     }
 
