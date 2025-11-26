@@ -4,6 +4,7 @@ const axios = require("axios");
 const { PDFDocument } = require("pdf-lib");
 const { SignatureBaseline, LogVerification } = require("../models");
 const Document = require("../models/Document");
+const SignatureRequest = require("../models/SignatureRequest");
 
 
 const FLASK_URL = process.env.FLASK_URL || "http://localhost:5000";
@@ -312,38 +313,66 @@ exports.signDocumentExternally = async (req, res) => {
   try {
     const { baseline_id, pageNumber, x, y, width, height } = req.body;
     const documentId = req.params.id;
+    const requesterId = req.user.user_id;
 
+    // 🔒 Validasi input dasar
     if (!baseline_id) {
       return res.status(400).json({ error: "baseline_id harus diisi." });
     }
 
-    // Ambil dokumen milik user yang sedang login
+    // 🔒 Pastikan dokumen memang milik user yang login (requester)
     const docRecord = await Document.findOne({
-      where: { document_id: documentId, user_id: req.user.user_id }
+      where: { document_id: documentId, user_id: requesterId }
     });
 
     if (!docRecord) {
       return res.status(404).json({ error: "Dokumen tidak ditemukan atau bukan milik Anda." });
     }
 
-    // Ambil baseline tanda tangan signer yang disetujui
+    // 🔒 Ambil baseline tanda tangan signer yang akan ditempel
     const baseline = await SignatureBaseline.findOne({ where: { baseline_id } });
 
     if (!baseline || !baseline.sign_image) {
       return res.status(404).json({ error: "Baseline tanda tangan tidak ditemukan." });
     }
 
+    const signerId = baseline.user_id;
+    if (!signerId) {
+      return res.status(500).json({
+        error: "Baseline tidak memiliki informasi pemilik (signer_id)."
+      });
+    }
+
+    // 🔒 CEK: Apakah ada SignatureRequest APPROVED
+    // antara dokumen ini, requester ini, dan signer ini?
+    const approvedRequest = await SignatureRequest.findOne({
+      where: {
+        document_id: Number(documentId),
+        requester_id: requesterId,
+        signer_id: signerId,
+        status: "approved"
+      }
+    });
+
+    if (!approvedRequest) {
+      return res.status(403).json({
+        error: "Tidak ada permintaan tanda tangan yang disetujui untuk dokumen dan signer ini."
+      });
+    }
+
+    // 🔹 Pastikan file baseline image ada di server
     const baselineImagePath = path.resolve(baseline.sign_image);
     if (!fs.existsSync(baselineImagePath)) {
       return res.status(500).json({ error: "File tanda tangan baseline tidak ditemukan di server." });
     }
 
-    // Load PDF
+    // 🔹 Load file PDF dokumen asli
     const originalFilePath = path.join(process.cwd(), docRecord.file_path);
     if (!fs.existsSync(originalFilePath)) {
       return res.status(500).json({ error: "File dokumen tidak ditemukan di server." });
     }
 
+    // 🔹 Siapkan folder output untuk dokumen signed
     const signedDir = path.join("uploads", "documents", "signed");
     fs.mkdirSync(signedDir, { recursive: true });
 
@@ -351,7 +380,7 @@ exports.signDocumentExternally = async (req, res) => {
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
 
     const signatureBytes = await fs.promises.readFile(baselineImagePath);
-    const embeddedImage = baselineImagePath.endsWith(".png")
+    const embeddedImage = baselineImagePath.toLowerCase().endsWith(".png")
       ? await pdfDoc.embedPng(signatureBytes)
       : await pdfDoc.embedJpg(signatureBytes);
 
@@ -376,8 +405,14 @@ exports.signDocumentExternally = async (req, res) => {
     const signedPath = path.join(signedDir, signedFilename);
     await fs.promises.writeFile(signedPath, pdfBytes);
 
-    const relativeSignedPath = path.relative(process.cwd(), signedPath).replace(/\\/g, "/");
-    await docRecord.update({ file_path: relativeSignedPath, status: "signed" });
+    const relativeSignedPath = path
+      .relative(process.cwd(), signedPath)
+      .replace(/\\/g, "/");
+
+    await docRecord.update({
+      file_path: relativeSignedPath,
+      status: "signed"
+    });
 
     return res.json({
       message: "Tanda tangan eksternal berhasil diterapkan.",

@@ -2,22 +2,30 @@ const { Op } = require("sequelize");
 const SignatureRequest = require("../models/SignatureRequest");
 const Document = require("../models/Document");
 const User = require("../models/User");
+const SignatureBaseline = require("../models/SignatureBaseline");
 
-// Create signature request (pakai email)
+// ===============================
+// CREATE REQUEST (EMAIL-BASED)
+// ===============================
 exports.createRequest = async (req, res) => {
   try {
     const { document_id, recipientEmail, note } = req.body;
 
+    // 🔒 Validasi dasar
     if (!document_id || !recipientEmail) {
-      return res.status(400).json({ success: false, message: "document_id dan recipientEmail wajib diisi" });
+      return res.status(400).json({
+        success: false,
+        message: "document_id dan recipientEmail wajib diisi"
+      });
     }
 
     const email = String(recipientEmail).trim().toLowerCase();
 
-    // Validasi dokumen milik requester
+    // 🔒 Pastikan dokumen memang milik requester (user yang login)
     const doc = await Document.findOne({
       where: { document_id, user_id: req.user.user_id }
     });
+
     if (!doc) {
       return res.status(404).json({
         success: false,
@@ -25,7 +33,7 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    // Jika email penerima sudah terdaftar sbg user, tautkan signer_id
+    // Jika email penerima sudah terdaftar, simpan user_id-nya
     const existingUser = await User.findOne({ where: { email } });
 
     const request = await SignatureRequest.create({
@@ -48,16 +56,24 @@ exports.createRequest = async (req, res) => {
   }
 };
 
-// Incoming requests (user dimintai) — via signer_id ATAU email yang cocok
+// ===========================================
+// INCOMING REQUESTS (SIGNER) + FILTER STATUS
+// ===========================================
 exports.getIncomingRequests = async (req, res) => {
   try {
+    const { status } = req.query;
+
+    const whereClause = {
+      [Op.or]: [
+        { signer_id: req.user.user_id },
+        { recipient_email: req.user.email }
+      ]
+    };
+
+    if (status) whereClause.status = status;
+
     const requests = await SignatureRequest.findAll({
-      where: {
-        [Op.or]: [
-          { signer_id: req.user.user_id },
-          { recipient_email: req.user.email } // jika request dibuat sebelum user terdaftar
-        ]
-      },
+      where: whereClause,
       include: [
         { model: User, as: "requester", attributes: ["user_id", "name", "email"] },
         { model: Document, attributes: ["document_id", "title", "file_path"] }
@@ -71,11 +87,18 @@ exports.getIncomingRequests = async (req, res) => {
   }
 };
 
-// Outgoing requests (user peminta) — tidak berubah
+// ===========================================
+// OUTGOING REQUESTS (REQUESTER) + FILTER STATUS
+// ===========================================
 exports.getOutgoingRequests = async (req, res) => {
   try {
+    const { status } = req.query;
+
+    const whereClause = { requester_id: req.user.user_id };
+    if (status) whereClause.status = status;
+
     const requests = await SignatureRequest.findAll({
-      where: { requester_id: req.user.user_id },
+      where: whereClause,
       include: [
         { model: User, as: "signer", attributes: ["user_id", "name", "email"] },
         { model: Document, attributes: ["document_id", "title", "file_path"] }
@@ -89,7 +112,9 @@ exports.getOutgoingRequests = async (req, res) => {
   }
 };
 
-// Approve
+// ===============================
+// APPROVE REQUEST
+// ===============================
 exports.approveRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
@@ -106,9 +131,14 @@ exports.approveRequest = async (req, res) => {
       return res.status(404).json({ success: false, message: "Permintaan tidak ditemukan" });
     }
 
-    request.status = "approved";
+    if (request.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Permintaan sudah berstatus '${request.status}', tidak bisa di-approve lagi`
+      });
+    }
 
-    // Opsional: backfill signer_id jika sebelumnya null tapi user sekarang sudah login
+    request.status = "approved";
     if (!request.signer_id) request.signer_id = req.user.user_id;
 
     await request.save();
@@ -119,7 +149,9 @@ exports.approveRequest = async (req, res) => {
   }
 };
 
-// Reject
+// ===============================
+// REJECT REQUEST
+// ===============================
 exports.rejectRequest = async (req, res) => {
   try {
     const request = await SignatureRequest.findOne({
@@ -136,9 +168,14 @@ exports.rejectRequest = async (req, res) => {
       return res.status(404).json({ success: false, message: "Permintaan tidak ditemukan" });
     }
 
-    request.status = "rejected";
+    if (request.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Permintaan sudah berstatus '${request.status}', tidak bisa di-reject lagi`
+      });
+    }
 
-    // Opsional: backfill signer_id jika perlu
+    request.status = "rejected";
     if (!request.signer_id) request.signer_id = req.user.user_id;
 
     await request.save();
@@ -146,5 +183,75 @@ exports.rejectRequest = async (req, res) => {
     res.json({ success: true, message: "Permintaan ditolak", data: request });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ===============================
+// GET SIGNATURE (HANYA JIKA APPROVED)
+// ===============================
+exports.getRequestSignature = async (req, res) => {
+  try {
+    const request = await SignatureRequest.findOne({
+      where: {
+        request_id: req.params.id,
+        requester_id: req.user.user_id
+      }
+    });
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "Request tidak ditemukan atau bukan milik Anda"
+      });
+    }
+
+    if (request.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: `Tidak bisa mengambil tanda tangan. Status request: '${request.status}'`
+      });
+    }
+
+    let signerId = request.signer_id;
+
+    if (!signerId) {
+      const user = await User.findOne({ where: { email: request.recipient_email }});
+      if (user) {
+        signerId = user.user_id;
+        request.signer_id = signerId;
+        await request.save();
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "User penerima belum memiliki akun"
+        });
+      }
+    }
+
+    const baseline = await SignatureBaseline.findOne({
+      where: { user_id: signerId },
+      order: [["created_at", "ASC"]]
+    });
+
+    if (!baseline) {
+      return res.status(404).json({
+        success: false,
+        message: "Signer belum memiliki tanda tangan baseline"
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        request_id: request.request_id,
+        signer_id: signerId,
+        baseline_id: baseline.baseline_id,
+        sign_image: baseline.sign_image
+      }
+    });
+
+  } catch (err) {
+    console.error("getRequestSignature error:", err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 };

@@ -1,4 +1,4 @@
 node_modules/
 /.env
 /venv
-src/E-Signature_API.postman_collection.json
+/E-Signature_API.postman_collection.json
