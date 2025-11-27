@@ -62,3 +62,28 @@ exports.rejectAdmin = async (req, res) => {
 
   res.json({ message: "Pengajuan admin ditolak" });
 };
+
+exports.getPendingAdminRequests = async (req, res) => {
+  try {
+    const requests = await User.findAll({
+      where: {
+        role: "admin_request",
+        status_regis: "pending"
+      },
+      attributes: ["user_id", "name", "email", "register_date", "status_regis"]
+    });
+
+    if (requests.length === 0) {
+      return res.json({ message: "Tidak ada request admin." });
+    }
+
+    res.json({
+      message: "List permintaan admin",
+      data: requests
+    });
+
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+

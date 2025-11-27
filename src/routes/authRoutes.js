@@ -1,6 +1,6 @@
 const express = require("express");
 const { register, login, getProfile } = require("../controllers/authController");
-const { createAdmin, approveAdmin, rejectAdmin  } = require("../controllers/adminController");
+const { createAdmin, approveAdmin, rejectAdmin,  getPendingAdminRequests  } = require("../controllers/adminController");
 const authMiddleware = require("../middleware/authMiddleware");
 const isAdmin = require("../middleware/adminMiddleware");
 
@@ -18,5 +18,8 @@ router.put("/approve/:id", authMiddleware, isAdmin, approveAdmin);
 
 // Reject admin
 router.put("/reject/:id", authMiddleware, isAdmin, rejectAdmin);
+
+
+router.get("/pending-admin-request", authMiddleware, isAdmin, getPendingAdminRequests); 
 
 module.exports = router;
