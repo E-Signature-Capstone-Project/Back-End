@@ -6,7 +6,17 @@ const User = sequelize.define("User", {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
   password: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.ENUM("user", "admin"), defaultValue: "user" },
+
+  role: {
+    type: DataTypes.ENUM("user", "admin", "admin_request"),
+    defaultValue: "user"
+  },
+
+  status_regis: {
+    type: DataTypes.ENUM("pending", "approved", "rejected"),
+    defaultValue: "approved"
+  },
+
   register_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 });
 
