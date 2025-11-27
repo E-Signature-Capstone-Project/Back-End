@@ -3,6 +3,7 @@ const SignatureRequest = require("../models/SignatureRequest");
 const Document = require("../models/Document");
 const User = require("../models/User");
 const SignatureBaseline = require("../models/SignatureBaseline");
+const LogVerification = require("../models/LogVerification");
 
 // ===============================
 // CREATE REQUEST (EMAIL-BASED)
@@ -44,6 +45,7 @@ exports.createRequest = async (req, res) => {
       note: note || null,
       status: "pending"
     });
+    
 
     return res.status(201).json({
       success: true,
@@ -270,6 +272,45 @@ exports.getRequestSignature = async (req, res) => {
 
   } catch (err) {
     console.error("getRequestSignature error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ===============================
+// REQUEST HISTORY (ADMIN & USER)
+// ===============================
+exports.getRequestHistory = async (req, res) => {
+  try {
+    let whereClause = {};
+
+    if (req.user.role !== "admin") {
+      whereClause = {
+        [Op.or]: [
+          { requester_id: req.user.user_id },
+          { signer_id: req.user.user_id },
+          { recipient_email: req.user.email }
+        ]
+      };
+    }
+
+    const history = await SignatureRequest.findAll({
+      where: whereClause,
+      include: [
+        { model: User, as: "requester", attributes: ["user_id", "name", "email"] },
+        { model: User, as: "signer", attributes: ["user_id", "name", "email"] },
+        { model: Document, attributes: ["document_id", "title", "file_path"] }
+      ],
+      order: [["updatedAt", "DESC"]]
+    });
+
+    return res.json({
+      success: true,
+      message: "Riwayat permintaan tanda tangan berhasil didapat",
+      data: history
+    });
+
+  } catch (err) {
+    console.error("getRequestHistory error:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 };
