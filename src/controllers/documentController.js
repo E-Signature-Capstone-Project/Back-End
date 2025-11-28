@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const QRCode = require("qrcode");
 const { PDFDocument } = require("pdf-lib");
 const { SignatureBaseline, LogVerification } = require("../models");
 const Document = require("../models/Document");
@@ -31,6 +32,43 @@ function euclideanDistance(vec1, vec2) {
     sum += Math.pow(vec1[i] - vec2[i], 2);
   }
   return Math.sqrt(sum);
+}
+
+
+/**
+ * Helper: gambar QR Code di pojok kanan bawah halaman
+ * @param {PDFDocument} pdfDoc
+ * @param {PDFPage} page
+ * @param {number} documentId
+ */
+async function drawDocumentQrOnPage(pdfDoc, page, documentId) {
+  // Data di dalam QR (boleh kamu ganti, misalnya URL verifikasi)
+  const qrData = `DOC:${documentId}`;
+
+  // Generate QR sebagai buffer PNG (tidak perlu simpan file)
+  const qrBuffer = await QRCode.toBuffer(qrData, {
+    width: 128,              // ukuran kira-kira 128x128 px
+    errorCorrectionLevel: "M"
+  });
+
+  const qrImage = await pdfDoc.embedPng(qrBuffer);
+  const qrDims = qrImage.scale(1);
+
+  const { width: pageWidth, height: pageHeight } = page.getSize();
+
+  const margin = 36; // 0.5 inch dari tepi
+  const qrWidth = qrDims.width;
+  const qrHeight = qrDims.height;
+
+  const qrX = pageWidth - qrWidth - margin;  // pojok kanan bawah
+  const qrY = margin;
+
+  page.drawImage(qrImage, {
+    x: qrX,
+    y: qrY,
+    width: qrWidth,
+    height: qrHeight
+  });
 }
 
 exports.getDocuments = async (req, res) => {
@@ -198,6 +236,9 @@ exports.applySignature = async (req, res) => {
       width: Number(width || 150),
       height: Number(height || 50),
     });
+
+    // 🔗 Tambahkan QR Code dokumen di halaman yang sama
+    await drawDocumentQrOnPage(pdfDoc, targetPage, docRecord.document_id);
 
     const pdfBytes = await pdfDoc.save();
     const signedFilename = `signed_${Date.now()}_${path.basename(originalFilePath)}`;
@@ -418,6 +459,9 @@ exports.signDocumentExternally = async (req, res) => {
       height: Number(height || 50)
     });
 
+    // 🔗 Tambahkan QR Code dokumen di halaman yang sama
+    await drawDocumentQrOnPage(pdfDoc, targetPage, docRecord.document_id);
+
     const pdfBytes = await pdfDoc.save();
     const signedFilename = `signed_external_${Date.now()}_${path.basename(
       originalFilePath
@@ -453,3 +497,4 @@ exports.signDocumentExternally = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
