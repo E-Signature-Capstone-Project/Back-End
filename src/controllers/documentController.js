@@ -11,6 +11,8 @@ const SignatureRequest = require("../models/SignatureRequest");
 const FLASK_URL = process.env.FLASK_URL || "http://localhost:5000";
 const VERIFY_REQUIRED = (process.env.SIGNATURE_VERIFY_REQUIRED || "true").toLowerCase() === "true";
 const VERIFY_THRESHOLD = parseFloat(process.env.SIGNATURE_VERIFY_THRESHOLD || "0.8");
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "http://localhost:4000";
+
 
 /** Helper: ekstrak embedding dari Flask /extract */
 async function getEmbeddingFromFlask(imagePath) {
@@ -36,38 +38,58 @@ function euclideanDistance(vec1, vec2) {
 
 
 /**
- * Helper: gambar QR Code di pojok kanan bawah halaman
+ * Helper: gambar QR Code di dekat tanda tangan (default: di kanan)
  * @param {PDFDocument} pdfDoc
  * @param {PDFPage} page
  * @param {number} documentId
+ * @param {number} sigX
+ * @param {number} sigY
+ * @param {number} sigWidth
+ * @param {number} sigHeight
  */
-async function drawDocumentQrOnPage(pdfDoc, page, documentId) {
-  // Data di dalam QR (boleh kamu ganti, misalnya URL verifikasi)
-  const qrData = `DOC:${documentId}`;
+async function drawDocumentQrNearSignature(pdfDoc, page, documentId, sigX, sigY, sigWidth, sigHeight) {
+  // ✅ Data di dalam QR sekarang URL publik
+  // Contoh: http://192.168.1.10:4000/documents/public/verify/2
+  const qrData = `${PUBLIC_BASE_URL}/documents/public/verify/${documentId}`;
 
-  // Generate QR sebagai buffer PNG (tidak perlu simpan file)
+  // Generate QR sebagai buffer PNG
   const qrBuffer = await QRCode.toBuffer(qrData, {
-    width: 128,              // ukuran kira-kira 128x128 px
-    errorCorrectionLevel: "M"
+    width: 96,
+    errorCorrectionLevel: "M",
   });
 
   const qrImage = await pdfDoc.embedPng(qrBuffer);
   const qrDims = qrImage.scale(1);
 
   const { width: pageWidth, height: pageHeight } = page.getSize();
+  const margin = 16;
 
-  const margin = 36; // 0.5 inch dari tepi
-  const qrWidth = qrDims.width;
-  const qrHeight = qrDims.height;
+  // Posisi & ukuran signature
+  sigX = Number(sigX || 0);
+  sigY = Number(sigY || 0);
+  sigWidth = Number(sigWidth || 150);
+  sigHeight = Number(sigHeight || 50);
 
-  const qrX = pageWidth - qrWidth - margin;  // pojok kanan bawah
-  const qrY = margin;
+  // Default: QR di kanan tanda tangan
+  let qrX = sigX + sigWidth + 8;
+  let qrY = sigY;
+
+  // Kalau mepet kanan, geser ke kiri tanda tangan
+  if (qrX + qrDims.width + margin > pageWidth) {
+    qrX = Math.max(margin, sigX - qrDims.width - 8);
+  }
+
+  // Clamp vertikal supaya nggak keluar halaman
+  if (qrY + qrDims.height + margin > pageHeight) {
+    qrY = pageHeight - qrDims.height - margin;
+  }
+  if (qrY < margin) qrY = margin;
 
   page.drawImage(qrImage, {
     x: qrX,
     y: qrY,
-    width: qrWidth,
-    height: qrHeight
+    width: qrDims.width,
+    height: qrDims.height,
   });
 }
 
@@ -230,15 +252,28 @@ exports.applySignature = async (req, res) => {
     }
     const targetPage = pages[pn - 1];
 
+    const sigX = Number(x || 0);
+    const sigY = Number(y || 0);
+    const sigW = Number(width || 150);
+    const sigH = Number(height || 50);
+
     targetPage.drawImage(embeddedImage, {
-      x: Number(x || 0),
-      y: Number(y || 0),
-      width: Number(width || 150),
-      height: Number(height || 50),
+      x: sigX,
+      y: sigY,
+      width: sigW,
+      height: sigH,
     });
 
-    // 🔗 Tambahkan QR Code dokumen di halaman yang sama
-    await drawDocumentQrOnPage(pdfDoc, targetPage, docRecord.document_id);
+    // 🔗 Tambahkan QR Code di dekat tanda tangan
+    await drawDocumentQrNearSignature(
+      pdfDoc,
+      targetPage,
+      docRecord.document_id,
+      sigX,
+      sigY,
+      sigW,
+      sigH
+    );
 
     const pdfBytes = await pdfDoc.save();
     const signedFilename = `signed_${Date.now()}_${path.basename(originalFilePath)}`;
@@ -452,15 +487,28 @@ exports.signDocumentExternally = async (req, res) => {
 
     const targetPage = pages[pn - 1];
 
+    const sigX = Number(x || 0);
+    const sigY = Number(y || 0);
+    const sigW = Number(width || 150);
+    const sigH = Number(height || 50);
+
     targetPage.drawImage(embeddedImage, {
-      x: Number(x || 0),
-      y: Number(y || 0),
-      width: Number(width || 150),
-      height: Number(height || 50)
+      x: sigX,
+      y: sigY,
+      width: sigW,
+      height: sigH
     });
 
-    // 🔗 Tambahkan QR Code dokumen di halaman yang sama
-    await drawDocumentQrOnPage(pdfDoc, targetPage, docRecord.document_id);
+    // 🔗 Tambahkan QR Code di dekat tanda tangan
+    await drawDocumentQrNearSignature(
+      pdfDoc,
+      targetPage,
+      docRecord.document_id,
+      sigX,
+      sigY,
+      sigW,
+      sigH
+    );
 
     const pdfBytes = await pdfDoc.save();
     const signedFilename = `signed_external_${Date.now()}_${path.basename(
@@ -495,6 +543,30 @@ exports.signDocumentExternally = async (req, res) => {
   } catch (err) {
     console.error("signDocumentExternally error:", err);
     return res.status(500).json({ error: err.message });
+  }
+};
+
+// ===============================
+// PUBLIC VERIFY: REDIRECT KE PDF
+// ===============================
+exports.verifyDocumentPublic = async (req, res) => {
+  try {
+    const documentId = req.params.id;
+
+    const doc = await Document.findByPk(documentId);
+    if (!doc || !doc.file_path) {
+      return res.status(404).send("Dokumen tidak ditemukan.");
+    }
+
+    // Pastikan path relatif jadi URL absolut
+    const normalizedPath = doc.file_path.replace(/\\/g, "/");
+    const fileUrl = `${req.protocol}://${req.get("host")}/${normalizedPath}`;
+
+    // 🔁 Redirect 302 ke file PDF
+    return res.redirect(302, fileUrl);
+  } catch (err) {
+    console.error("verifyDocumentPublic error:", err);
+    return res.status(500).send("Terjadi kesalahan pada server.");
   }
 };
 

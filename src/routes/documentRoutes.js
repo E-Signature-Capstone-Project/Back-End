@@ -9,8 +9,12 @@ const {
   getDocuments, 
   getDocumentById, 
   uploadDocument,
-  signDocumentExternally // ✅ Tambahan baru
+  signDocumentExternally,
+  verifyDocumentPublic,
 } = require("../controllers/documentController");
+
+// ✅ Route verifikasi publik (TANPA auth)
+router.get("/public/verify/:id", verifyDocumentPublic);
 
 // Daftar dokumen
 router.get("/", authMiddleware, getDocuments);
