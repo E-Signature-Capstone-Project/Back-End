@@ -114,10 +114,42 @@ const createAdmin = async (req, res) => {
   }
 };
 
+// ================== UPDATE NAME ==================
+const updateName = async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || name.trim().length < 3) {
+      return res.status(400).json({
+        error: "Nama harus minimal 3 karakter"
+      });
+    }
+
+    const user = await User.findByPk(req.user.user_id);
+
+    if (!user) {
+      return res.status(404).json({ error: "User tidak ditemukan" });
+    }
+
+    user.name = name.trim();
+    await user.save();
+
+    res.json({ 
+      message: "Nama berhasil diperbarui", 
+      user: { user_id: user.user_id, name: user.name, email: user.email }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
 // ================== EXPORT ==================
 module.exports = {
   register,
   login,
   getProfile,
-  createAdmin // WAJIB ADA
+  createAdmin,
+  updateName // WAJIB ADA
 };
