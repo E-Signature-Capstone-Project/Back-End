@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
-
+const userRoutes = require("./userRoutes");
 const authRoutes = require("./authRoutes");
 const documentRoutes = require("./documentRoutes");
 const signatureRequestRoutes = require("./signatureRequestRoutes");
 const logRoutes = require("./logRoutes");
 const signatureBaselineRoutes = require("./signatureBaselineRoutes");
 
+router.use("/users", userRoutes);
 router.use("/auth", authRoutes);
 router.use("/documents", documentRoutes);
 router.use("/requests", signatureRequestRoutes);
