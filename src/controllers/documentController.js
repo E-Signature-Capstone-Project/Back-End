@@ -471,10 +471,10 @@ exports.signDocumentExternally = async (req, res) => {
     const existingPdfBytes = await fs.promises.readFile(originalFilePath);
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
 
-    const signatureBytes = await fs.promises.readFile(baselineImagePath);
-    const embeddedImage = baselineImagePath.toLowerCase().endsWith(".png")
-      ? await pdfDoc.embedPng(signatureBytes)
-      : await pdfDoc.embedJpg(signatureBytes);
+    // const signatureBytes = await fs.promises.readFile(baselineImagePath);
+    // const embeddedImage = baselineImagePath.toLowerCase().endsWith(".png")
+    //   ? await pdfDoc.embedPng(signatureBytes)
+    //   : await pdfDoc.embedJpg(signatureBytes);
 
     const pages = pdfDoc.getPages();
     const pn = Number(pageNumber || 1);
@@ -486,18 +486,17 @@ exports.signDocumentExternally = async (req, res) => {
     }
 
     const targetPage = pages[pn - 1];
-
     const sigX = Number(x || 0);
     const sigY = Number(y || 0);
     const sigW = Number(width || 150);
     const sigH = Number(height || 50);
 
-    targetPage.drawImage(embeddedImage, {
-      x: sigX,
-      y: sigY,
-      width: sigW,
-      height: sigH
-    });
+    // targetPage.drawImage(embeddedImage, {
+    //   x: sigX,
+    //   y: sigY,
+    //   width: sigW,
+    //   height: sigH
+    // });
 
     // 🔗 Tambahkan QR Code di dekat tanda tangan
     await drawDocumentQrNearSignature(
