@@ -1,4 +1,8 @@
 const express = require("express");
+const router = express.Router();
+
+const authMiddleware = require("../middleware/authMiddleware");
+
 const {
   createRequest,
   getIncomingRequests,
@@ -7,12 +11,12 @@ const {
   rejectRequest,
   getRequestSignature,
   getRequestHistory,
+  getPublicSignatureRequestsByDocument
 } = require("../controllers/signatureRequestController");
 
-const authMiddleware = require("../middleware/authMiddleware");
-
-const router = express.Router();
-
+/* =======================
+   PROTECTED ROUTES
+======================= */
 router.post("/", authMiddleware, createRequest);
 router.get("/incoming", authMiddleware, getIncomingRequests);
 router.get("/outgoing", authMiddleware, getOutgoingRequests);
@@ -21,5 +25,12 @@ router.get("/:id/signature", authMiddleware, getRequestSignature);
 router.post("/:id/approve", authMiddleware, approveRequest);
 router.post("/:id/reject", authMiddleware, rejectRequest);
 
+/* =======================
+   PUBLIC QR ROUTE
+======================= */
+router.get(
+  "/public/:documentId",
+  getPublicSignatureRequestsByDocument
+);
 
 module.exports = router;

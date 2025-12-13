@@ -3,7 +3,6 @@ const SignatureRequest = require("../models/SignatureRequest");
 const Document = require("../models/Document");
 const User = require("../models/User");
 const SignatureBaseline = require("../models/SignatureBaseline");
-const LogVerification = require("../models/LogVerification");
 
 // ===============================
 // CREATE REQUEST (EMAIL-BASED)
@@ -312,5 +311,79 @@ exports.getRequestHistory = async (req, res) => {
   } catch (err) {
     console.error("getRequestHistory error:", err);
     return res.status(500).json({ success: false, error: err.message });
+  }
+};
+exports.getPublicSignatureRequestsByDocument = async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    const document = await Document.findOne({
+      where: { document_id: documentId },
+      attributes: ["document_id", "title"],
+      include: [
+        {
+          model: User,
+          as: "owner", // 🔥 HARUS ADA ALIAS
+          attributes: ["user_id", "name", "email"]
+        }
+      ]
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: "Dokumen tidak ditemukan"
+      });
+    }
+
+    const signatures = await SignatureRequest.findAll({
+      where: { document_id: documentId },
+      attributes: ["request_id", "status", "created_at", "updated_at"],
+      include: [
+        {
+          model: User,
+          as: "signer",
+          attributes: ["user_id", "name", "email"],
+          required: false // 🔥 signer boleh null
+        }
+      ],
+      order: [["created_at", "ASC"]]
+    });
+
+    return res.json({
+      success: true,
+      document: {
+        id: document.document_id,
+        title: document.title,
+        owner: document.owner
+          ? {
+              id: document.owner.user_id,
+              name: document.owner.name,
+              email: document.owner.email
+            }
+          : null
+      },
+      signatures: signatures.map(sig => ({
+        request_id: sig.request_id,
+        status: sig.status,
+        created_at: sig.created_at,
+        updated_at: sig.updated_at,
+        signer: sig.signer
+          ? {
+              id: sig.signer.user_id,
+              name: sig.signer.name,
+              email: sig.signer.email
+            }
+          : null
+      }))
+    });
+
+  } catch (error) {
+    console.error("QR Public Verification Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data verifikasi",
+      error: error.message
+    });
   }
 };

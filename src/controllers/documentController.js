@@ -50,7 +50,8 @@ function euclideanDistance(vec1, vec2) {
 async function drawDocumentQrNearSignature(pdfDoc, page, documentId, sigX, sigY, sigWidth, sigHeight) {
   // ✅ Data di dalam QR sekarang URL publik
   // Contoh: http://192.168.1.10:4000/documents/public/verify/2
-  const qrData = `${PUBLIC_BASE_URL}/documents/public/verify/${documentId}`;
+ const qrData = `${PUBLIC_BASE_URL}/signature-requests/public/${documentId}`;
+
 
   // Generate QR sebagai buffer PNG
   const qrBuffer = await QRCode.toBuffer(qrData, {

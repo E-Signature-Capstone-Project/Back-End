@@ -26,10 +26,23 @@ LogVerification.belongsTo(User, { foreignKey: "user_id" });
 // Document ↔ LogVerification
 Document.hasMany(LogVerification, { foreignKey: "document_id" });
 LogVerification.belongsTo(Document, { foreignKey: "document_id" });
+// User ↔ Document (OWNER)
+User.hasMany(Document, {
+  foreignKey: "user_id",
+  as: "documents"
+});
+
+Document.belongsTo(User, {
+  foreignKey: "user_id",
+  as: "owner"
+});
+
 
 // User ↔ SignatureBaseline
 User.hasMany(SignatureBaseline, { foreignKey: "user_id" });
 SignatureBaseline.belongsTo(User, { foreignKey: "user_id" });
+
+
 
 module.exports = {
   sequelize,
