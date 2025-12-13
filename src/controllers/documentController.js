@@ -435,11 +435,11 @@ exports.signDocumentExternally = async (req, res) => {
     const approvedRequest = await SignatureRequest.findOne({
       where: {
         document_id: documentId,
-        requester_id: requesterId,
         signer_id: signerId,
         status: "approved"
       }
     });
+
 
     // ⛔ Kalau tidak ada request approved, TOLAK
     if (!approvedRequest) {
@@ -569,4 +569,3 @@ exports.verifyDocumentPublic = async (req, res) => {
     return res.status(500).send("Terjadi kesalahan pada server.");
   }
 };
-

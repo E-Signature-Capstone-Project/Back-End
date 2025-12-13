@@ -36,7 +36,7 @@ router.post(
   "/:id/sign/external",
   authMiddleware,
   uploadDocumentImage.none(),
-  signDocumentExternally
+  signDocumentExternally,
 );
 
 module.exports = router;
