@@ -1,38 +1,51 @@
 const express = require("express");
 const router = express.Router();
 
+// Auth controller
 const {
   register,
+  registerAdmin,
   login,
   getProfile,
-  createAdmin,
   updateName
 } = require("../controllers/authController");
 
-const { 
-  createAdmin, 
-  approveAdmin, 
-  rejectAdmin  
+// Admin controller
+const {
+  createAdmin,
+  approveAdmin,
+  rejectAdmin
 } = require("../controllers/adminController");
 
+// Middleware
 const authMiddleware = require("../middleware/authMiddleware");
+const isAdmin = require("../middleware/adminMiddleware");
 
-// Public
+/* =======================
+   AUTH ROUTES (PUBLIC)
+======================= */
 router.post("/register", register);
 router.post("/login", login);
 
-// Protected
+/* =======================
+   AUTH ROUTES (PROTECTED)
+======================= */
 router.get("/profile", authMiddleware, getProfile);
 router.put("/name", authMiddleware, updateName);
 
-// Dev: create admin (optional protection if needed)
-router.post("/create-admin", createAdmin);
+/* =======================
+   ADMIN ROUTES
+======================= */
+
+router.post("/register-admin", registerAdmin); // admin (request)
+
+// Dev / Super Admin
+router.post("/create-admin", authMiddleware, isAdmin, createAdmin);
 
 // Approve admin
-router.put("/approve/:id", authMiddleware, isAdmin, approveAdmin);
+router.put("/admin/approve/:id", authMiddleware, isAdmin, approveAdmin);
 
 // Reject admin
-router.put("/reject/:id", authMiddleware, isAdmin, rejectAdmin);
-
+router.put("/admin/reject/:id", authMiddleware, isAdmin, rejectAdmin);
 
 module.exports = router;

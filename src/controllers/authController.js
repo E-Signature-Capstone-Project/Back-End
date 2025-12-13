@@ -81,39 +81,6 @@ const getProfile = async (req, res) => {
   }
 };
 
-// ================== CREATE ADMIN ==================
-const createAdmin = async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(400).json({ error: "Email sudah terdaftar" });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const admin = await User.create({
-      name,
-      email,
-      password: hashed,
-      role: "admin"
-    });
-
-    res.status(201).json({
-      message: "Admin berhasil dibuat",
-      admin: {
-        user_id: admin.user_id,
-        email: admin.email,
-        role: admin.role
-      }
-    });
-  } catch (err) {
-    console.error("❌ Create admin error:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
 // ================== UPDATE NAME ==================
 const updateName = async (req, res) => {
   try {
@@ -144,12 +111,55 @@ const updateName = async (req, res) => {
   }
 };
 
+// ================== REGISTER ADMIN ==================
+const registerAdmin = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        error: "Nama, email, dan password wajib diisi"
+      });
+    }
+
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
+      return res.status(400).json({
+        error: "Email sudah terdaftar"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const adminRequest = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      role: "admin_request",
+      status_regis: "pending"
+    });
+
+    return res.status(201).json({
+      message: "Registrasi admin berhasil. Menunggu persetujuan.",
+      data: {
+        user_id: adminRequest.user_id,
+        email: adminRequest.email,
+        role: adminRequest.role,
+        status: adminRequest.status_regis
+      }
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 
 // ================== EXPORT ==================
 module.exports = {
   register,
+  registerAdmin,
   login,
   getProfile,
-  createAdmin,
   updateName // WAJIB ADA
 };
