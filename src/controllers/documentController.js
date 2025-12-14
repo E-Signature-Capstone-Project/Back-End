@@ -50,7 +50,7 @@ function euclideanDistance(vec1, vec2) {
 async function drawDocumentQrNearSignature(pdfDoc, page, documentId, sigX, sigY, sigWidth, sigHeight) {
   // ✅ Data di dalam QR sekarang URL publik
   // Contoh: http://192.168.1.10:4000/documents/public/verify/2
- const qrData = `${PUBLIC_BASE_URL}/signature-requests/public/${documentId}`;
+ const qrData = `${PUBLIC_BASE_URL}/requests/public/${documentId}`;
 
 
   // Generate QR sebagai buffer PNG
@@ -227,6 +227,20 @@ exports.applySignature = async (req, res) => {
       }).catch(err => console.error(err));
     }
 
+    // Memasukkan self-sign ke SignatureRequest sebagai "completed"
+    await SignatureRequest.findOrCreate({
+      where: {
+        document_id: docRecord.document_id,
+        signer_id: req.user.user_id
+      },
+      defaults: {
+        requester_id: req.user.user_id,
+        recipient_email: req.user.email,
+        status: "completed",
+        note: "Self signed document"
+      }
+    });    
+
     // 🔹 Menempel signature ke PDF
     const originalFilePath = path.join(process.cwd(), docRecord.file_path);
     if (!fs.existsSync(originalFilePath)) {
@@ -240,10 +254,10 @@ exports.applySignature = async (req, res) => {
     const existingPdfBytes = await fs.promises.readFile(originalFilePath);
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
 
-    const signatureBytes = await fs.promises.readFile(uploadedSigPath);
-    const embeddedImage = req.file.mimetype === "image/png"
-      ? await pdfDoc.embedPng(signatureBytes)
-      : await pdfDoc.embedJpg(signatureBytes);
+    // const signatureBytes = await fs.promises.readFile(uploadedSigPath);
+    // const embeddedImage = req.file.mimetype === "image/png"
+    //   ? await pdfDoc.embedPng(signatureBytes)
+    //   : await pdfDoc.embedJpg(signatureBytes);
 
     const pages = pdfDoc.getPages();
     const pn = Number(pageNumber || 1);
@@ -258,12 +272,12 @@ exports.applySignature = async (req, res) => {
     const sigW = Number(width || 150);
     const sigH = Number(height || 50);
 
-    targetPage.drawImage(embeddedImage, {
-      x: sigX,
-      y: sigY,
-      width: sigW,
-      height: sigH,
-    });
+    // targetPage.drawImage(embeddedImage, {
+    //   x: sigX,
+    //   y: sigY,
+    //   width: sigW,
+    //   height: sigH,
+    // });
 
     // 🔗 Tambahkan QR Code di dekat tanda tangan
     await drawDocumentQrNearSignature(
@@ -296,7 +310,7 @@ exports.applySignature = async (req, res) => {
         file_url: signedFileUrl,
         status: "signed"
       }
-    });
+    });    
 
   } catch (err) {
     console.error("applySignature error:", err);
@@ -305,6 +319,8 @@ exports.applySignature = async (req, res) => {
   }
 };
 
+
+// Deprecated: digantikan applySignature & signDocumentExternally
 exports.signDocument = async (req, res) => {
   try {
     const userId = req.user.user_id;

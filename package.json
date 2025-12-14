@@ -27,6 +27,7 @@
     "nodemailer": "^7.0.10",
     "pdf-lib": "^1.17.1",
     "python-shell": "^5.0.0",
+    "qr": "^0.5.3",
     "qrcode": "^1.5.4",
     "sequelize": "^6.37.7"
   },

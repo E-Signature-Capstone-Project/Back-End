@@ -313,6 +313,7 @@ exports.getRequestHistory = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
 exports.getPublicSignatureRequestsByDocument = async (req, res) => {
   try {
     const { documentId } = req.params;
