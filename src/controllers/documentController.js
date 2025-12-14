@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const QRCode = require("qrcode");
+const { Op } = require("sequelize");
 const { PDFDocument } = require("pdf-lib");
 const { SignatureBaseline, LogVerification } = require("../models");
 const Document = require("../models/Document");
@@ -92,6 +93,22 @@ async function drawDocumentQrNearSignature(pdfDoc, page, documentId, sigX, sigY,
     width: qrDims.width,
     height: qrDims.height,
   });
+}
+
+async function finalizeDocumentIfDone(documentId) {
+  const remaining = await SignatureRequest.count({
+    where: {
+      document_id: documentId,
+      status: { [Op.ne]: "completed" }
+    }
+  });
+
+  if (remaining === 0) {
+    await Document.update(
+      { status: "completed" },
+      { where: { document_id: documentId } }
+    );
+  }
 }
 
 exports.getDocuments = async (req, res) => {
@@ -239,7 +256,9 @@ exports.applySignature = async (req, res) => {
         status: "completed",
         note: "Self signed document"
       }
-    });    
+    });
+
+    await finalizeDocumentIfDone(docRecord.document_id);    
 
     // 🔹 Menempel signature ke PDF
     const originalFilePath = path.join(process.cwd(), docRecord.file_path);
@@ -296,7 +315,10 @@ exports.applySignature = async (req, res) => {
     await fs.promises.writeFile(signedPath, pdfBytes);
 
     const relativeSignedPath = path.relative(process.cwd(), signedPath).replace(/\\/g, "/");
-    await docRecord.update({ file_path: relativeSignedPath, status: "signed" });
+    await docRecord.update({
+      file_path: relativeSignedPath,
+      status: "in_signing"
+    });
 
     if (fs.existsSync(uploadedSigPath)) fs.unlinkSync(uploadedSigPath);
 
@@ -406,156 +428,122 @@ exports.signDocumentExternally = async (req, res) => {
   try {
     const requesterId = req.user.user_id;
     const documentId = Number(req.params.id);
-    const { baseline_id, pageNumber, x, y, width, height } = req.body;
+    const { request_id, baseline_id, pageNumber, x, y, width, height } = req.body;
 
-    if (!baseline_id) {
-      return res.status(400).json({ error: "baseline_id harus diisi." });
-    }
-
-    // 1. Pastikan dokumen memang milik requester (User A)
-    const docRecord = await Document.findOne({
-      where: { document_id: documentId, user_id: requesterId }
-    });
-
-    if (!docRecord) {
-      return res
-        .status(404)
-        .json({ error: "Dokumen tidak ditemukan atau bukan milik Anda." });
-    }
-
-    // (opsional) boleh multi-sign atau tidak, sesuai keputusanmu
-    // if (docRecord.status === "signed") {
-    //   return res
-    //     .status(400)
-    //     .json({ error: "Dokumen ini sudah ditandatangani." });
-    // }
-
-    // 2. Ambil baseline
-    const baseline = await SignatureBaseline.findOne({
-      where: { baseline_id }
-    });
-
-    if (!baseline || !baseline.sign_image) {
-      return res
-        .status(404)
-        .json({ error: "Baseline tanda tangan tidak ditemukan." });
-    }
-
-    const signerId = baseline.user_id;
-    if (!signerId) {
-      return res.status(500).json({
-        error: "Baseline tidak memiliki informasi pemilik (signer_id)."
+    if (!request_id || !baseline_id) {
+      return res.status(400).json({
+        error: "request_id dan baseline_id wajib diisi."
       });
     }
 
-    // 3. WAJIB: cek SignatureRequest yang APPROVED
-    const approvedRequest = await SignatureRequest.findOne({
+    // 1. Dokumen harus milik requester
+    const document = await Document.findOne({
+      where: { document_id: documentId, user_id: requesterId }
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        error: "Dokumen tidak ditemukan atau bukan milik Anda."
+      });
+    }
+
+    // 2. Ambil SignatureRequest (SUMBER KEBENARAN)
+    const request = await SignatureRequest.findOne({
       where: {
+        request_id,
         document_id: documentId,
-        signer_id: signerId,
         status: "approved"
       }
     });
 
-
-    // ⛔ Kalau tidak ada request approved, TOLAK
-    if (!approvedRequest) {
+    if (!request) {
       return res.status(403).json({
-        error:
-          "Signer belum menyetujui permintaan tanda tangan untuk dokumen ini."
+        error: "Request tidak ditemukan atau belum disetujui."
       });
     }
 
-    // 4. Pastikan file signature & dokumen ada di server
-    const baselineImagePath = path.resolve(baseline.sign_image);
-    if (!fs.existsSync(baselineImagePath)) {
-      return res.status(500).json({
-        error: "File tanda tangan baseline tidak ditemukan di server."
+    const signerId = request.signer_id;
+
+    // 3. Validasi baseline MILIK signer
+    const baseline = await SignatureBaseline.findOne({
+      where: {
+        baseline_id,
+        user_id: signerId
+      }
+    });
+
+    if (!baseline || !baseline.sign_image) {
+      return res.status(400).json({
+        error: "Baseline tidak valid atau bukan milik signer."
       });
     }
 
-    const originalFilePath = path.join(process.cwd(), docRecord.file_path);
+    // 4. Load PDF
+    const originalFilePath = path.join(process.cwd(), document.file_path);
     if (!fs.existsSync(originalFilePath)) {
       return res.status(500).json({
         error: "File dokumen tidak ditemukan di server."
       });
     }
 
-    // 5. Load PDF dan tempel tanda tangan
-    const signedDir = path.join("uploads", "documents", "signed");
-    fs.mkdirSync(signedDir, { recursive: true });
-
-    const existingPdfBytes = await fs.promises.readFile(originalFilePath);
-    const pdfDoc = await PDFDocument.load(existingPdfBytes);
-
-    // const signatureBytes = await fs.promises.readFile(baselineImagePath);
-    // const embeddedImage = baselineImagePath.toLowerCase().endsWith(".png")
-    //   ? await pdfDoc.embedPng(signatureBytes)
-    //   : await pdfDoc.embedJpg(signatureBytes);
+    const pdfBytes = await fs.promises.readFile(originalFilePath);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
 
     const pages = pdfDoc.getPages();
-    const pn = Number(pageNumber || 1);
+    const pageIndex = Number(pageNumber || 1) - 1;
 
-    if (pn < 1 || pn > pages.length) {
-      return res
-        .status(400)
-        .json({ error: "Halaman tanda tangan di luar jangkauan." });
+    if (!pages[pageIndex]) {
+      return res.status(400).json({
+        error: "Halaman tanda tangan tidak valid."
+      });
     }
 
-    const targetPage = pages[pn - 1];
-    const sigX = Number(x || 0);
-    const sigY = Number(y || 0);
-    const sigW = Number(width || 150);
-    const sigH = Number(height || 50);
+    const targetPage = pages[pageIndex];
 
-    // targetPage.drawImage(embeddedImage, {
-    //   x: sigX,
-    //   y: sigY,
-    //   width: sigW,
-    //   height: sigH
-    // });
-
-    // 🔗 Tambahkan QR Code di dekat tanda tangan
+    // ❌ TIDAK gambar tanda tangan basah
+    // ✅ HANYA QR
     await drawDocumentQrNearSignature(
       pdfDoc,
       targetPage,
-      docRecord.document_id,
-      sigX,
-      sigY,
-      sigW,
-      sigH
+      document.document_id,
+      x, y, width, height
     );
 
-    const pdfBytes = await pdfDoc.save();
-    const signedFilename = `signed_external_${Date.now()}_${path.basename(
-      originalFilePath
-    )}`;
-    const signedPath = path.join(signedDir, signedFilename);
-    await fs.promises.writeFile(signedPath, pdfBytes);
+    // 5. Simpan PDF baru
+    const signedDir = path.join("uploads", "documents", "signed");
+    fs.mkdirSync(signedDir, { recursive: true });
 
-    const relativeSignedPath = path
-      .relative(process.cwd(), signedPath)
-      .replace(/\\/g, "/");
+    const filename = `signed_${documentId}_${Date.now()}.pdf`;
+    const signedPath = path.join(signedDir, filename);
 
-    // 6. Update dokumen jadi signed
-    await docRecord.update({
-      file_path: relativeSignedPath,
-      status: "signed"
+    await fs.promises.writeFile(signedPath, await pdfDoc.save());
+
+    const relativePath = signedPath.replace(process.cwd(), "").replace(/\\/g, "/");
+
+    // 6. Update dokumen (JANGAN LOCK)
+    await document.update({
+      file_path: relativePath
     });
 
-    // 7. (Opsional tapi bagus): tandai request sebagai "completed"
-    approvedRequest.status = "completed";
-    await approvedRequest.save();
+    // 7. Tandai request selesai
+    await request.update({
+      status: "completed",
+      signed_at: new Date()
+    });
+
+    // 8. Finalisasi dokumen jika semua request selesai
+    await finalizeDocumentIfDone(document.document_id);
 
     return res.json({
-      message: "Tanda tangan eksternal berhasil diterapkan.",
+      message: "Tanda tangan berhasil diterapkan.",
+      signer_id: signerId,
+      request_id,
       document: {
-        document_id: docRecord.document_id,
-        title: docRecord.title,
-        file_url: `${req.protocol}://${req.get("host")}/${relativeSignedPath}`,
-        status: docRecord.status
+        document_id: document.document_id,
+        file_url: `${req.protocol}://${req.get("host")}${relativePath}`
       }
     });
+
   } catch (err) {
     console.error("signDocumentExternally error:", err);
     return res.status(500).json({ error: err.message });
