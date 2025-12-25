@@ -3,3 +3,4 @@ node_modules/
 /venv
 /E-Signature_API.postman_collection.json
 *.exe
+/uploads/

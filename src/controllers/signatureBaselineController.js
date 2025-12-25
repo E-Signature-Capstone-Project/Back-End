@@ -146,6 +146,96 @@ exports.addBaseline = async (req, res) => {
   }
 };
 
+// ===============================
+// Create Signwell session for drawing baseline (returns URL to frontend)
+// ===============================
+exports.createSignwellSessionForBaseline = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const SIGNWELL_BASE = process.env.SIGNWELL_BASE_URL;
+    const SIGNWELL_API_KEY = process.env.SIGNWELL_API_KEY;
+    const SIGNWELL_REDIRECT = process.env.SIGNWELL_REDIRECT_URL || (req.protocol + '://' + req.get('host') + '/sign-complete');
+
+    if (!SIGNWELL_BASE || !SIGNWELL_API_KEY) {
+      return res.status(500).json({ error: 'Signwell not configured on server' });
+    }
+
+    const payload = {
+      title: `Baseline for user ${userId}`,
+      signers: [{ email: req.user.email }],
+      redirect_url: SIGNWELL_REDIRECT,
+    };
+
+    const resp = await require('axios').post(`${SIGNWELL_BASE.replace(/\/$/, '')}/signature_requests`, payload, {
+      headers: { Authorization: `Bearer ${SIGNWELL_API_KEY}`, 'Content-Type': 'application/json' },
+    });
+
+    const data = resp && resp.data ? resp.data : {};
+    const url = data.url || data.redirect_url || data.sign_url || (data.data && (data.data.url || data.data.redirect_url));
+    if (!url) return res.status(500).json({ error: 'Failed to create Signwell session' });
+
+    return res.json({ url });
+  } catch (err) {
+    console.error('createSignwellSessionForBaseline error:', err.message || err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ===============================
+// Complete baseline from frontend after Signwell redirect
+// Frontend should POST { image_url }
+// ===============================
+exports.completeBaselineFromSignwell = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { image_url } = req.body;
+    if (!image_url) return res.status(400).json({ error: 'image_url is required' });
+
+    // Download image
+    const axiosInst = require('axios');
+    const resp = await axiosInst.get(image_url, { responseType: 'arraybuffer', timeout: 10000 });
+    const buf = Buffer.from(resp.data);
+
+    const userDir = path.join('uploads', 'signatures', String(userId));
+    fs.mkdirSync(userDir, { recursive: true });
+    const filename = `baseline_${Date.now()}.png`;
+    const savePath = path.join(userDir, filename);
+    fs.writeFileSync(savePath, buf);
+
+    const normalizedDbPath = path.relative(process.cwd(), savePath).replace(/\\/g, '/');
+
+    // reuse existing addBaseline logic: compute embedding and compare
+    const embedding = await getEmbeddingFromFlask(savePath);
+
+    const existingBaselines = await SignatureBaseline.findAll({ where: { user_id: userId } });
+    if (existingBaselines.length === 0) {
+      const newBaseline = await SignatureBaseline.create({ user_id: userId, sign_image: normalizedDbPath, feature_vector: embedding });
+      return res.status(201).json({ message: 'Baseline created', baseline: newBaseline });
+    }
+
+    // Compare with existing baselines
+    let isMatch = false;
+    let matchedBaselineId = null;
+    for (const base of existingBaselines) {
+      const baselinePath = path.resolve(base.sign_image);
+      if (!fs.existsSync(baselinePath)) continue;
+      const compare = await compareWithFlask(savePath, baselinePath, 0.8);
+      if (compare.match) { isMatch = true; matchedBaselineId = base.baseline_id; break; }
+    }
+
+    if (!isMatch) {
+      fs.unlinkSync(savePath);
+      return res.status(400).json({ error: 'Signature does not match existing baseline(s)' });
+    }
+
+    const newBaseline = await SignatureBaseline.create({ user_id: userId, sign_image: normalizedDbPath, feature_vector: embedding });
+    return res.status(201).json({ message: 'Baseline created', baseline: newBaseline, matchedBaselineId });
+  } catch (err) {
+    console.error('completeBaselineFromSignwell error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 // ========================================================
 // 📜 Get semua baseline user
 // ========================================================

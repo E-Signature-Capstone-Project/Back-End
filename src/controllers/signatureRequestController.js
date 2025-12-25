@@ -276,6 +276,84 @@ exports.getRequestSignature = async (req, res) => {
 };
 
 // ===============================
+// REDIRECT SIGNER TO SIGNWELL (DRAW SIGNATURE)
+// ===============================
+exports.redirectToSignwell = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+
+    const request = await SignatureRequest.findOne({ where: { request_id: requestId } });
+    if (!request) return res.status(404).json({ success: false, message: "Permintaan tidak ditemukan" });
+
+    // Hanya signer yang bisa diarahkan untuk menggambar tanda tangan
+    const isSigner = request.signer_id && request.signer_id === req.user.user_id;
+    const isRecipientEmail = request.recipient_email && request.recipient_email === req.user.email;
+    if (!isSigner && !isRecipientEmail && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Anda tidak berwenang untuk menggambar tanda tangan pada request ini" });
+    }
+
+    if (request.status !== "approved") {
+      return res.status(400).json({ success: false, message: `Request status harus 'approved' untuk menggambar tanda tangan (sekarang: '${request.status}')` });
+    }
+
+    const SIGNWELL_BASE = process.env.SIGNWELL_BASE_URL;
+    const SIGNWELL_API_KEY = process.env.SIGNWELL_API_KEY;
+    const SIGNWELL_REDIRECT = process.env.SIGNWELL_REDIRECT_URL || (req.protocol + '://' + req.get('host') + '/sign-complete');
+    const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || (req.protocol + '://' + req.get('host'));
+
+    // Ambil dokumen untuk disertakan pada payload
+    const Document = require("../models/Document");
+    const doc = await Document.findByPk(request.document_id);
+    if (!doc) return res.status(404).json({ success: false, message: "Dokumen terkait tidak ditemukan" });
+
+    const normalizedPath = doc.file_path ? doc.file_path.replace(/\\/g, "/") : null;
+    const docUrl = normalizedPath ? `${PUBLIC_BASE}/${normalizedPath}` : null;
+
+    // Jika kunci API dan base URL Signwell tersedia, buat session server-side
+    if (SIGNWELL_BASE && SIGNWELL_API_KEY) {
+      try {
+        const payload = {
+          title: doc.title || `Document ${doc.document_id}`,
+          signers: [
+            { email: request.recipient_email || req.user.email }
+          ],
+          document_url: docUrl,
+          redirect_url: SIGNWELL_REDIRECT
+        };
+
+        const resp = await require("axios").post(
+          `${SIGNWELL_BASE.replace(/\/$/, '')}/signature_requests`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${SIGNWELL_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            timeout: 10000
+          }
+        );
+
+        const data = resp && resp.data ? resp.data : {};
+        const possibleUrl = data.url || data.redirect_url || data.sign_url || (data.data && (data.data.url || data.data.redirect_url));
+        if (possibleUrl) return res.redirect(302, possibleUrl);
+      } catch (err) {
+        console.warn("Signwell session creation failed:", err.message || err.toString());
+        // lanjut ke fallback redirect
+      }
+    }
+
+    // Fallback: redirect sederhana (sebagai cadangan)
+    const signerEmail = request.recipient_email || req.user.email;
+    const fallbackBase = SIGNWELL_BASE || "";
+    const fallback = `${fallbackBase.replace(/\/$/, '')}/draw?request_id=${encodeURIComponent(request.request_id)}&email=${encodeURIComponent(signerEmail)}&redirect=${encodeURIComponent(SIGNWELL_REDIRECT)}`;
+    return res.redirect(302, fallback);
+  } catch (err) {
+    console.error("redirectToSignwell error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ===============================
 // REQUEST HISTORY (ADMIN & USER)
 // ===============================
 exports.getRequestHistory = async (req, res) => {

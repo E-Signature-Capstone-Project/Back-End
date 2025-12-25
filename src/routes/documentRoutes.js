@@ -11,6 +11,8 @@ const {
   uploadDocument,
   signDocumentExternally,
   verifyDocumentPublic,
+  createSignwellSessionForDocument,
+  completeSignFromSignwell,
 } = require("../controllers/documentController");
 
 // ✅ Route verifikasi publik (TANPA auth)
@@ -38,5 +40,11 @@ router.post(
   uploadDocumentImage.none(),
   signDocumentExternally,
 );
+
+// Create Signwell session for signing own document (returns URL to frontend)
+router.post('/:id/signwell-session', authMiddleware, createSignwellSessionForDocument);
+
+// Complete sign: frontend posts { image_url, pageNumber, x, y, width, height }
+router.post('/:id/complete-sign', authMiddleware, express.json(), completeSignFromSignwell);
 
 module.exports = router;
