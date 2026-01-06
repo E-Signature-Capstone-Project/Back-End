@@ -14,7 +14,8 @@ const {
 const {
   createAdmin,
   approveAdmin,
-  rejectAdmin
+  rejectAdmin,
+  getPendingAdminRequests
 } = require("../controllers/adminController");
 
 // Middleware
@@ -47,5 +48,8 @@ router.put("/admin/approve/:id", authMiddleware, isAdmin, approveAdmin);
 
 // Reject admin
 router.put("/admin/reject/:id", authMiddleware, isAdmin, rejectAdmin);
+
+// Get pending admin requests
+router.get("/admin/pending-requests", authMiddleware, isAdmin, getPendingAdminRequests);
 
 module.exports = router;

@@ -30,10 +30,7 @@ const SignatureRequest = sequelize.define(
       allowNull: false,
       validate: { isEmail: true },
       set(v) {
-        this.setDataValue(
-          "recipient_email",
-          String(v).trim().toLowerCase()
-        );
+        this.setDataValue("recipient_email", String(v).trim().toLowerCase());
       }
     },
 
@@ -49,14 +46,14 @@ const SignatureRequest = sequelize.define(
   },
   {
     tableName: "signature_requests",
-    timestamps: true,
-    createdAt: "created_at",
-    updatedAt: "updated_at",
+    timestamps: true,          // ✅ AKTIF
+    createdAt: "created_at",   // ✅ MAP KE DB
+    updatedAt: "updated_at",   // ✅ MAP KE DB
     underscored: true
   }
 );
 
-// 🔥 PENTING: MATIKAN id DEFAULT
+// 🔥 WAJIB
 SignatureRequest.removeAttribute("id");
 
 module.exports = SignatureRequest;

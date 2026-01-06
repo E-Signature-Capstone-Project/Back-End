@@ -358,37 +358,40 @@ exports.redirectToSignwell = async (req, res) => {
 // ===============================
 exports.getRequestHistory = async (req, res) => {
   try {
-    let whereClause = {};
+    const userId = req.user.user_id;
+    const email = req.user.email;
 
-    if (req.user.role !== "admin") {
-      whereClause = {
+    const requests = await SignatureRequest.findAll({
+      where: {
         [Op.or]: [
-          { requester_id: req.user.user_id },
-          { signer_id: req.user.user_id },
-          { recipient_email: req.user.email }
+          { requester_id: userId },
+          { signer_id: userId },
+          { recipient_email: email }
         ]
-      };
-    }
-
-    const history = await SignatureRequest.findAll({
-      where: whereClause,
+      },
       include: [
-        { model: User, as: "requester", attributes: ["user_id", "name", "email"] },
-        { model: User, as: "signer", attributes: ["user_id", "name", "email"] },
-        { model: Document, attributes: ["document_id", "title", "file_path"] }
+        {
+          model: User,
+          as: "requester",
+          attributes: ["user_id", "name", "email"]
+        },
+        {
+          model: User,
+          as: "signer",
+          attributes: ["user_id", "name", "email"]
+        },
+        {
+          model: Document,
+          attributes: ["document_id", "title", "file_path"]
+        }
       ],
-      order: [["updatedAt", "DESC"]]
+      order: [["updated_at", "DESC"]] // ✅ FIX UTAMA
     });
 
-    return res.json({
-      success: true,
-      message: "Riwayat permintaan tanda tangan berhasil didapat",
-      data: history
-    });
-
+    return res.json(requests);
   } catch (err) {
     console.error("getRequestHistory error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ error: "Gagal mengambil riwayat permintaan" });
   }
 };
 
